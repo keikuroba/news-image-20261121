@@ -35,10 +35,14 @@ def reject(reason):
 def iter_chunks(blob):
     """Yield (kind, payload) for each chunk in blob, checking CRCs."""
     pos = len(MAGIC)
+    first = True
     while pos < len(blob):
         if pos + 8 > len(blob):
             reject("chunk header cut off")
         size, kind = struct.unpack(">I4s", blob[pos:pos + 8])
+        if first and kind != b"IHDR":
+            reject(f"first chunk is {kind!r}, not IHDR")
+        first = False
         stop = pos + 8 + size + 4
         if stop > len(blob):
             reject(f"chunk {kind!r} cut off")
@@ -65,6 +69,7 @@ def validate(blob):
     depth = ctype = None
     seen_header = False
     saw_pixels = False
+    pixel_bytes = bytearray()
     for kind, payload in iter_chunks(blob):
         if kind == b"IHDR":
             if seen_header:
@@ -79,6 +84,7 @@ def validate(blob):
             seen_header = True
         elif kind == b"IDAT":
             saw_pixels = True
+            pixel_bytes += payload
         elif kind == b"IEND":
             if len(payload) != 0:
                 reject("IEND carries payload")
@@ -88,6 +94,14 @@ def validate(blob):
         reject("no IDAT chunk")
     if ctype not in CHANNELS:
         reject(f"colour type {ctype} is not supported")
+    try:
+        raw = zlib.decompress(bytes(pixel_bytes))
+    except zlib.error as exc:
+        reject(f"IDAT does not inflate: {exc}")
+    row_bytes = (width * depth * CHANNELS[ctype] + 7) // 8
+    if len(raw) != height * (row_bytes + 1):
+        reject(f"inflated pixel data is {len(raw)} bytes, want "
+               f"{height * (row_bytes + 1)}")
     return width, height
 
 
