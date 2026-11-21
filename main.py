@@ -35,6 +35,7 @@ def check_png(data):
     pos = 8
     seen_ihdr = False
     seen_iend = False
+    first_chunk = True
     idat = bytearray()
     width = height = None
     bit_depth = color_type = None
@@ -42,6 +43,9 @@ def check_png(data):
         if pos + 8 > len(data):
             fail("truncated chunk header")
         length, ctype = struct.unpack(">I4s", data[pos:pos + 8])
+        if first_chunk and ctype != b"IHDR":
+            fail(f"first chunk is {ctype!r}, not IHDR")
+        first_chunk = False
         end = pos + 8 + length + 4
         if end > len(data):
             fail(f"truncated {ctype!r} chunk")
