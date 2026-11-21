@@ -1,315 +1,330 @@
 #!/usr/bin/env python3
-"""Draw the front page for Saturday 21 November 2026.
+"""Render the front page for Saturday 21 November 2026.
 
-Build-time script only; the entry itself (main.py) just ships the PNG.
-Deterministic: no clock, no randomness, no network. Pillow only.
+Build-time helper only: the submitted program (main.py) ships the PNG
+this script produces and never runs this file. Nothing here touches
+the clock, the network or any random source, so the picture is the
+same every time it is drawn. Pillow is the only dependency.
 """
+import math
+
 from PIL import Image, ImageDraw, ImageFont
 
-W, H = 1024, 1024
-MARGIN = 36
-CW = W - 2 * MARGIN  # 952
+PAGE_W, PAGE_H = 1024, 1024
+EDGE = 36
+TEXT_W = PAGE_W - 2 * EDGE
 
-PAPER = (247, 243, 234)
-INK = (18, 18, 18)
-GREY = (90, 86, 76)
-RED = (178, 34, 34)
-NAVY = (16, 32, 64)
-BLUE = (28, 68, 128)
-GOLD = (176, 128, 28)
-LIGHT_LINE = (150, 144, 128)
+COLOURS = {
+    "paper": (247, 243, 234),
+    "ink": (18, 18, 18),
+    "grey": (90, 86, 76),
+    "red": (178, 34, 34),
+    "navy": (16, 32, 64),
+    "blue": (28, 68, 128),
+    "gold": (176, 128, 28),
+    "pale": (150, 144, 128),
+    "sky": (214, 228, 240),
+    "cream": (226, 220, 205),
+    "flame": (232, 120, 40),
+}
 
-SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
-SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+FONT_SERIF = "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf"
+FONT_SANS = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+FONT_SANS_B = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
 
-def font(path, size):
+def load_font(path, size):
     return ImageFont.truetype(path, size)
 
 
-def wrap(draw, text, fnt, width):
-    words = text.split()
-    lines, cur = [], ""
-    for w in words:
-        trial = (cur + " " + w).strip()
-        if draw.textlength(trial, font=fnt) <= width:
-            cur = trial
+def wrap_text(canvas, text, fnt, width):
+    """Split text into lines that fit width."""
+    out, current = [], ""
+    for word in text.split():
+        trial = (current + " " + word).strip()
+        if canvas.textlength(trial, font=fnt) <= width:
+            current = trial
+        elif current:
+            out.append(current)
+            current = word
         else:
-            if cur:
-                lines.append(cur)
-            cur = w
-    if cur:
-        lines.append(cur)
-    return lines
+            current = word
+    if current:
+        out.append(current)
+    return out
 
 
-def draw_wrapped(draw, x, y, text, fnt, width, fill=INK, spacing=4):
-    lines = wrap(draw, text, fnt, width)
-    for ln in lines:
-        draw.text((x, y), ln, font=fnt, fill=fill)
-        y += fnt.size + spacing
+def para(canvas, x, y, text, fnt, width, colour=None, gap=4):
+    """Draw wrapped text; return the y below it."""
+    colour = colour if colour is not None else COLOURS["ink"]
+    for line in wrap_text(canvas, text, fnt, width):
+        canvas.text((x, y), line, font=fnt, fill=colour)
+        y += fnt.size + gap
     return y
 
 
-def rule(draw, y, weight=2):
-    draw.line([(MARGIN, y), (W - MARGIN, y)], fill=INK, width=weight)
+def hrule(canvas, y, weight=2):
+    canvas.line([(EDGE, y), (PAGE_W - EDGE, y)],
+                fill=COLOURS["ink"], width=weight)
 
 
-def double_rule(draw, y):
-    rule(draw, y, 3)
-    rule(draw, y + 6, 1)
+def double_hrule(canvas, y):
+    hrule(canvas, y, 3)
+    hrule(canvas, y + 6, 1)
     return y + 12
 
 
-def kicker(draw, x, y, text):
-    f = font(SANS_B, 18)
-    draw.text((x, y), text, font=f, fill=RED)
-    return y + 24
-
-
-def headline(draw, x, y, text, size, width):
-    return draw_wrapped(draw, x, y, text, font(SERIF, size), width,
-                        fill=INK, spacing=2)
-
-
-def body(draw, x, y, text, width, size=19):
-    return draw_wrapped(draw, x, y, text, font(SANS, size), width,
-                        fill=INK, spacing=3)
-
-
-def burst(draw, cx, cy, r, col=(232, 120, 40)):
+def flame_burst(canvas, cx, cy, r):
     for dx, dy, rr in [(0, 0, r), (-r, r // 2, r // 2),
-                       (r // 2, -r // 2, r // 2), (r // 3, r // 2, r // 3)]:
-        draw.ellipse([cx + dx - rr, cy + dy - rr, cx + dx + rr,
-                      cy + dy + rr], fill=col)
+                       (r // 2, -r // 2, r // 2)]:
+        canvas.ellipse([cx + dx - rr, cy + dy - rr,
+                        cx + dx + rr, cy + dy + rr],
+                       fill=COLOURS["flame"])
 
 
-def poland_graphic(draw, x, y, w, h):
-    """Stylised map of Poland with two missile impacts."""
-    draw.rectangle([x, y, x + w, y + h], fill=(214, 228, 240))
-    draw.rectangle([x, y, x + w, y + h], outline=INK, width=2)
-    draw.text((x + 10, y + 8), "POLAND", font=font(SANS_B, 14), fill=GREY)
-    # rough Poland outline
-    pts = [(x + 30, y + 34), (x + 90, y + 26), (x + 150, y + 30),
-           (x + 205, y + 42), (x + 250, y + 36), (x + 272, y + 62),
-           (x + 262, y + 96), (x + 240, y + 118), (x + 200, y + 128),
-           (x + 150, y + 132), (x + 100, y + 126), (x + 55, y + 112),
-           (x + 28, y + 84), (x + 20, y + 58)]
-    draw.polygon(pts, fill=(236, 230, 210), outline=INK)
-    # missile arc from the east (kept inside the box)
-    draw.arc([x + 196, y + 10, x + 292, y + 62], start=195, end=335,
-             fill=RED, width=3)
-    burst(draw, x + 238, y + 74, 13)
-    burst(draw, x + 130, y + 92, 10)
-    draw.text((x + 10, y + h - 22), "2 MISSILES + DRONE DOWN",
-              font=font(SANS_B, 12), fill=RED)
+def frame(canvas, x, y, w, h, fill):
+    canvas.rectangle([x, y, x + w, y + h], fill=fill)
+    canvas.rectangle([x, y, x + w, y + h], outline=COLOURS["ink"], width=2)
 
 
-def chart_graphic(draw, x, y, w, h):
-    """Falling market line."""
-    draw.rectangle([x, y, x + w, y + h], fill=(255, 255, 255),
-                   outline=INK, width=2)
-    draw.text((x + 8, y + 6), "S&P 500  -3.7%",
-              font=font(SANS_B, 15), fill=RED)
+def pic_poland(canvas, x, y, w, h):
+    """Poland with two impact bursts and an incoming arc."""
+    frame(canvas, x, y, w, h, COLOURS["sky"])
+    canvas.text((x + 10, y + 8), "POLAND",
+                font=load_font(FONT_SANS_B, 14), fill=COLOURS["grey"])
+    outline = [(x + 34, y + 36), (x + 92, y + 28), (x + 150, y + 32),
+               (x + 205, y + 44), (x + 248, y + 38), (x + 270, y + 64),
+               (x + 260, y + 96), (x + 238, y + 118), (x + 198, y + 128),
+               (x + 148, y + 132), (x + 100, y + 126), (x + 56, y + 112),
+               (x + 30, y + 84), (x + 22, y + 58)]
+    canvas.polygon(outline, fill=(236, 230, 210), outline=COLOURS["ink"])
+    canvas.arc([x + 196, y + 10, x + 292, y + 62], start=195, end=335,
+               fill=COLOURS["red"], width=3)
+    flame_burst(canvas, x + 238, y + 74, 13)
+    flame_burst(canvas, x + 130, y + 92, 10)
+    canvas.text((x + 10, y + h - 22), "2 MISSILES + DRONE DOWN",
+                font=load_font(FONT_SANS_B, 12), fill=COLOURS["red"])
+
+
+def pic_chart(canvas, x, y, w, h):
+    """A market line falling steeply."""
+    frame(canvas, x, y, w, h, (255, 255, 255))
+    canvas.text((x + 8, y + 6), "S&P 500  -3.7%",
+                font=load_font(FONT_SANS_B, 15), fill=COLOURS["red"])
     pts = [(x + 8 + i * (w - 16) / 6,
             y + 30 + (i * i) * (h - 48) / 36) for i in range(7)]
-    draw.line(pts, fill=RED, width=4, joint="curve")
-    draw.ellipse([pts[-1][0] - 5, pts[-1][1] - 5,
-                  pts[-1][0] + 5, pts[-1][1] + 5], fill=RED)
+    canvas.line(pts, fill=COLOURS["red"], width=4, joint="curve")
+    canvas.ellipse([pts[-1][0] - 5, pts[-1][1] - 5,
+                    pts[-1][0] + 5, pts[-1][1] + 5],
+                   fill=COLOURS["red"])
 
 
-def scales_graphic(draw, x, y, w, h):
-    """Scales of justice for the ICJ ruling."""
-    draw.rectangle([x, y, x + w, y + h], fill=(226, 220, 205))
-    draw.rectangle([x, y, x + w, y + h], outline=INK, width=2)
-    draw.text((x + 8, y + 6), "ICJ",
-              font=font(SANS_B, 13), fill=GREY)
+def pic_scales(canvas, x, y, w, h):
+    """The scales of justice for the Hague ruling."""
+    frame(canvas, x, y, w, h, COLOURS["cream"])
+    canvas.text((x + 8, y + 6), "ICJ",
+                font=load_font(FONT_SANS_B, 13), fill=COLOURS["grey"])
     cx, cy = x + w // 2, y + 22
-    draw.line([(cx, cy), (cx, y + h - 14)], fill=INK, width=3)
-    draw.line([(cx - 42, cy + 6), (cx + 42, cy + 6)], fill=INK, width=3)
-    for s in (-1, 1):
-        px = cx + s * 42
-        draw.line([(px, cy + 6), (px, cy + 30)], fill=INK, width=2)
-        draw.arc([px - 16, cy + 26, px + 16, cy + 52], start=0, end=180,
-                 fill=NAVY, width=3)
-        draw.line([(px - 16, cy + 39), (px + 16, cy + 39)], fill=NAVY,
-                  width=3)
-    draw.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=GOLD)
+    canvas.line([(cx, cy), (cx, y + h - 14)], fill=COLOURS["ink"], width=3)
+    canvas.line([(cx - 42, cy + 6), (cx + 42, cy + 6)],
+                fill=COLOURS["ink"], width=3)
+    for side in (-1, 1):
+        px = cx + side * 42
+        canvas.line([(px, cy + 6), (px, cy + 30)],
+                    fill=COLOURS["ink"], width=2)
+        canvas.arc([px - 16, cy + 26, px + 16, cy + 52], start=0, end=180,
+                   fill=COLOURS["navy"], width=3)
+        canvas.line([(px - 16, cy + 39), (px + 16, cy + 39)],
+                    fill=COLOURS["navy"], width=3)
+    canvas.ellipse([cx - 5, cy - 5, cx + 5, cy + 5], fill=COLOURS["gold"])
 
 
-def flags_graphic(draw, x, y, w, h):
-    """Union Jack beside the EU ring of stars."""
-    draw.rectangle([x, y, x + w, y + h], fill=(255, 255, 255),
-                   outline=INK, width=2)
-    # Union Jack (simplified)
+def pic_flags(canvas, x, y, w, h):
+    """Union Jack next to the EU ring of stars."""
+    frame(canvas, x, y, w, h, (255, 255, 255))
     ux, uy, uw, uh = x + 8, y + 14, 56, 56
-    draw.rectangle([ux, uy, ux + uw, uy + uh], fill=(0, 36, 125))
-    draw.line([(ux, uy), (ux + uw, uy + uh)], fill=(255, 255, 255), width=9)
-    draw.line([(ux + uw, uy), (ux, uy + uh)], fill=(255, 255, 255), width=9)
-    draw.line([(ux, uy), (ux + uw, uy + uh)], fill=(200, 16, 46), width=3)
-    draw.line([(ux + uw, uy), (ux, uy + uh)], fill=(200, 16, 46), width=3)
-    draw.line([(ux + uw // 2, uy), (ux + uw // 2, uy + uh)],
-              fill=(255, 255, 255), width=11)
-    draw.line([(ux, uy + uh // 2), (ux + uw, uy + uh // 2)],
-              fill=(255, 255, 255), width=11)
-    draw.line([(ux + uw // 2, uy), (ux + uw // 2, uy + uh)],
-              fill=(200, 16, 46), width=5)
-    draw.line([(ux, uy + uh // 2), (ux + uw, uy + uh // 2)],
-              fill=(200, 16, 46), width=5)
-    # EU flag (simplified): blue field, ring of gold stars
+    canvas.rectangle([ux, uy, ux + uw, uy + uh], fill=(0, 36, 125))
+    for ends in [((ux, uy), (ux + uw, uy + uh)),
+                 ((ux + uw, uy), (ux, uy + uh))]:
+        canvas.line(ends, fill=(255, 255, 255), width=9)
+        canvas.line(ends, fill=(200, 16, 46), width=3)
+    canvas.line([(ux + uw // 2, uy), (ux + uw // 2, uy + uh)],
+                fill=(255, 255, 255), width=11)
+    canvas.line([(ux, uy + uh // 2), (ux + uw, uy + uh // 2)],
+                fill=(255, 255, 255), width=11)
+    canvas.line([(ux + uw // 2, uy), (ux + uw // 2, uy + uh)],
+                fill=(200, 16, 46), width=5)
+    canvas.line([(ux, uy + uh // 2), (ux + uw, uy + uh // 2)],
+                fill=(200, 16, 46), width=5)
     ex, ey, ew, eh = x + w - 64, y + 14, 56, 56
-    draw.rectangle([ex, ey, ex + ew, ey + eh], fill=(0, 51, 153))
-    import math
+    canvas.rectangle([ex, ey, ex + ew, ey + eh], fill=(0, 51, 153))
     for k in range(12):
-        a = math.pi * 2 * k / 12 - math.pi / 2
-        sx = ex + ew // 2 + int(19 * math.cos(a))
-        sy = ey + eh // 2 + int(19 * math.sin(a))
-        draw.ellipse([sx - 2, sy - 2, sx + 2, sy + 2], fill=GOLD)
+        angle = math.pi * 2 * k / 12 - math.pi / 2
+        sx = ex + ew // 2 + int(19 * math.cos(angle))
+        sy = ey + eh // 2 + int(19 * math.sin(angle))
+        canvas.ellipse([sx - 2, sy - 2, sx + 2, sy + 2],
+                       fill=COLOURS["gold"])
 
 
-def quake_graphic(draw, x, y, w, h):
-    """Seismograph trace, M6.8."""
-    draw.rectangle([x, y, x + w, y + h], fill=(255, 255, 255),
-                   outline=INK, width=2)
-    draw.text((x + 8, y + 6), "M 6.8 · JUNIN",
-              font=font(SANS_B, 13), fill=RED)
+def pic_quake(canvas, x, y, w, h):
+    """A seismograph trace with one big spike."""
+    frame(canvas, x, y, w, h, (255, 255, 255))
+    canvas.text((x + 8, y + 6), "M 6.8 · JUNIN",
+                font=load_font(FONT_SANS_B, 13), fill=COLOURS["red"])
     mid = y + h // 2 + 6
-    pts = [(x + 6, mid)]
     spikes = [0, 2, -3, 5, -22, 26, -14, 8, -4, 2, 0]
-    for i, s in enumerate(spikes):
-        pts.append((x + 6 + (i + 1) * (w - 12) / 11, mid + s))
-    draw.line(pts, fill=INK, width=2, joint="curve")
-    draw.ellipse([pts[5][0] - 4, pts[5][1] - 4,
-                  pts[5][0] + 4, pts[5][1] + 4], fill=RED)
+    pts = [(x + 6 + i * (w - 12) / 11, mid + s)
+           for i, s in enumerate(spikes)]
+    canvas.line(pts, fill=COLOURS["ink"], width=2, joint="curve")
+    canvas.ellipse([pts[5][0] - 4, pts[5][1] - 4,
+                    pts[5][0] + 4, pts[5][1] + 4], fill=COLOURS["red"])
 
 
-def story_block(draw, x, y, width, kick, head, text, graphic):
-    """One column story; returns bottom y. Graphic floats right of body."""
-    top = y
-    y = kicker(draw, x, y, kick)
-    y = headline(draw, x, y, head, 26, width)
+def column_story(canvas, x, y, width, kick, head, text, pic):
+    """One of the four smaller stories; returns the y below it."""
+    kick_f = load_font(FONT_SANS_B, 18)
+    canvas.text((x, y), kick, font=kick_f, fill=COLOURS["red"])
+    y += 24
+    y = para(canvas, x, y, head, load_font(FONT_SERIF, 26), width, gap=2)
     y += 4
-    gy = y
-    text_w = width - 140
-    end = body(draw, x, y, text, text_w)
-    graphic(draw, x + text_w + 12, gy, 128, 84)
-    return max(end, gy + 84), top
+    pic_y = y
+    body_w = width - 140
+    end = para(canvas, x, y, text, load_font(FONT_SANS, 19), body_w, gap=3)
+    pic(canvas, x + body_w + 12, pic_y, 128, 84)
+    return max(end, pic_y + 84)
 
 
-def main():
-    img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
+def two_column_row(canvas, y, left, right):
+    """Draw two column stories side by side; return the y below."""
+    col_w = (TEXT_W - 28) // 2
+    top = y
+    l_end = column_story(canvas, EDGE, y, col_w, *left)
+    r_end = column_story(canvas, EDGE + col_w + 28, y, col_w, *right)
+    bottom = max(l_end, r_end)
+    canvas.line([(EDGE + col_w + 14, top + 4),
+                 (EDGE + col_w + 14, bottom)], fill=COLOURS["pale"],
+                width=1)
+    return bottom
+
+
+LEAD = {
+    "kick": "POLAND  ·  NATO",
+    "head": "Russian missiles land in Poland as NATO cries foul",
+    "text": ("Two Russian missiles and a suspected drone came down inside "
+             "Poland during a massive Russian attack on Ukraine. No "
+             "injuries were reported. Prime Minister Donald Tusk called "
+             "it an intentional provocation; NATO called it a grave "
+             "violation of allied airspace."),
+}
+
+ROW_ONE = [
+    ("MARKETS  ·  NEW YORK",
+     "Wall Street slides into correction as AI shares plunge",
+     "US stocks fell about 3.7% on Friday, pushing the S&P 500 and "
+     "the Dow into correction territory as chip stocks led the "
+     "sell-off. Nvidia's crash deepened the rout.",
+     pic_chart),
+    ("JUSTICE  ·  THE HAGUE",
+     "World Court finds Myanmar committed genocide",
+     "The International Court of Justice ruled Myanmar's security "
+     "forces committed state-sponsored genocide against the "
+     "Rohingya. Myanmar called the ruling unfair.",
+     pic_scales),
+]
+
+ROW_TWO = [
+    ("EUROPE  ·  BRUSSELS",
+     "UK and EU strike their biggest post-Brexit deal",
+     "The deal scraps food checks, links carbon markets and opens "
+     "100,000 youth visas each way for up to three years. Britain "
+     "rejoins the Erasmus+ student exchange.",
+     pic_flags),
+    ("PERU  ·  EARTHQUAKE",
+     "Magnitude 6.8 quake shakes central Peru",
+     "A strong quake struck the Andean region of Junin, 129 km "
+     "deep, and was felt in Lima, where people ran into the "
+     "streets. No casualties were reported.",
+     pic_quake),
+]
+
+TICKER = ("DENMARK FOILS ALLEGED RUSSIAN PLOT, EXPELS ATTACHE  •  "
+          "TRUMP THREATENS BAN ON US AI DATA CENTRES ABROAD  •  "
+          "MAMDANI: RIKERS TO CLOSE BY 2032  •  KL RAHUL COMPLETES "
+          "SENA CENTURIES  •  COP31 IN FINAL STAGE")
+
+
+def build():
+    page = Image.new("RGB", (PAGE_W, PAGE_H), COLOURS["paper"])
+    canvas = ImageDraw.Draw(page)
 
     y = 20
-    top = font(SANS_B, 16)
+    over = load_font(FONT_SANS_B, 16)
     label = "THE WORLD IN ONE IMAGE"
-    d.text(((W - d.textlength(label, font=top)) / 2, y), label,
-           font=top, fill=GREY)
+    canvas.text(((PAGE_W - canvas.textlength(label, font=over)) / 2, y),
+                label, font=over, fill=COLOURS["grey"])
     y += 26
-    mast = font(SERIF, 76)
+    mast = load_font(FONT_SERIF, 76)
     name = "THE DAILY GLOBE"
-    d.text(((W - d.textlength(name, font=mast)) / 2, y), name,
-           font=mast, fill=INK)
+    canvas.text(((PAGE_W - canvas.textlength(name, font=mast)) / 2, y),
+                name, font=mast, fill=COLOURS["ink"])
     y += 88
-    date_f = font(SANS_B, 23)
+    date_f = load_font(FONT_SANS_B, 23)
     date = "SATURDAY  21  NOVEMBER  2026"
-    d.text(((W - d.textlength(date, font=date_f)) / 2, y), date,
-           font=date_f, fill=INK)
+    canvas.text(((PAGE_W - canvas.textlength(date, font=date_f)) / 2, y),
+                date, font=date_f, fill=COLOURS["ink"])
     y += 36
-    y = double_rule(d, y)
+    y = double_hrule(canvas, y)
     y += 6
 
-    # ---- lead story: Poland ----
-    y = kicker(d, MARGIN, y, "POLAND  ·  NATO")
-    y = headline(d, MARGIN, y,
-                 "Russian missiles land in Poland as NATO cries foul",
-                 46, CW)
+    # Lead story: Poland, full width with a map on the right.
+    kick_f = load_font(FONT_SANS_B, 18)
+    canvas.text((EDGE, y), LEAD["kick"], font=kick_f,
+                fill=COLOURS["red"])
+    y += 24
+    y = para(canvas, EDGE, y, LEAD["head"], load_font(FONT_SERIF, 46),
+             TEXT_W, gap=2)
     y += 6
-    gy = y
-    lead = ("Two Russian missiles and a suspected drone came down inside "
-            "Poland during a massive Russian attack on Ukraine. No "
-            "injuries were reported. Prime Minister Donald Tusk called "
-            "it an intentional provocation; NATO called it a grave "
-            "violation of allied airspace.")
-    end = body(d, MARGIN, y, lead, CW - 320, size=21)
-    poland_graphic(d, MARGIN + CW - 300, gy, 300, 158)
-    y = max(end, gy + 158) + 8
-    y = double_rule(d, y)
+    pic_y = y
+    end = para(canvas, EDGE, y, LEAD["text"], load_font(FONT_SANS, 21),
+               TEXT_W - 320, gap=3)
+    pic_poland(canvas, EDGE + TEXT_W - 300, pic_y, 300, 158)
+    y = max(end, pic_y + 158) + 8
+    y = double_hrule(canvas, y)
     y += 8
 
-    # ---- row: markets + ICJ ----
-    col_w = (CW - 28) // 2
-    row_top = y
-    left_end, _ = story_block(
-        d, MARGIN, y, col_w, "MARKETS  ·  NEW YORK",
-        "Wall Street slides into correction as AI shares plunge",
-        "US stocks fell about 3.7% on Friday, pushing the S&P 500 and "
-        "the Dow into correction territory as chip stocks led the "
-        "sell-off. Nvidia's crash deepened the rout.",
-        chart_graphic)
-    right_end, _ = story_block(
-        d, MARGIN + col_w + 28, y, col_w, "JUSTICE  ·  THE HAGUE",
-        "World Court finds Myanmar committed genocide",
-        "The International Court of Justice ruled Myanmar's security "
-        "forces committed state-sponsored genocide against the "
-        "Rohingya. Myanmar called the ruling unfair.",
-        scales_graphic)
-    y = max(left_end, right_end)
-    d.line([(MARGIN + col_w + 14, row_top + 4),
-            (MARGIN + col_w + 14, y)], fill=LIGHT_LINE, width=1)
+    # Two rows of two stories each.
+    y = two_column_row(canvas, y, *ROW_ONE)
     y += 8
-    rule(d, y, 1)
+    hrule(canvas, y, 1)
+    y += 10
+    y = two_column_row(canvas, y, *ROW_TWO)
+    y += 8
+    hrule(canvas, y, 1)
     y += 10
 
-    # ---- row: UK-EU + Peru quake ----
-    row_top = y
-    left_end, _ = story_block(
-        d, MARGIN, y, col_w, "EUROPE  ·  BRUSSELS",
-        "UK and EU strike their biggest post-Brexit deal",
-        "The deal scraps food checks, links carbon markets and opens "
-        "100,000 youth visas each way for up to three years. Britain "
-        "rejoins the Erasmus+ student exchange.",
-        flags_graphic)
-    right_end, _ = story_block(
-        d, MARGIN + col_w + 28, y, col_w, "PERU  ·  EARTHQUAKE",
-        "Magnitude 6.8 quake shakes central Peru",
-        "A strong quake struck the Andean region of Junin, 129 km "
-        "deep, and was felt in Lima, where people ran into the "
-        "streets. No casualties were reported.",
-        quake_graphic)
-    y = max(left_end, right_end)
-    d.line([(MARGIN + col_w + 14, row_top + 4),
-            (MARGIN + col_w + 14, y)], fill=LIGHT_LINE, width=1)
-    y += 8
-    rule(d, y, 1)
-    y += 10
-
-    # ---- ticker ----
-    ticker = ("DENMARK FOILS ALLEGED RUSSIAN PLOT, EXPELS ATTACHE  •  "
-              "TRUMP THREATENS BAN ON US AI DATA CENTRES ABROAD  •  "
-              "MAMDANI: RIKERS TO CLOSE BY 2032  •  KL RAHUL COMPLETES "
-              "SENA CENTURIES  •  COP31 IN FINAL STAGE")
+    # Ticker band and footer.
     band_h = 58
-    d.rectangle([MARGIN, y, W - MARGIN, y + band_h], fill=NAVY)
-    tf = font(SANS_B, 16)
-    lines = wrap(d, ticker, tf, CW - 24)
+    canvas.rectangle([EDGE, y, PAGE_W - EDGE, y + band_h],
+                     fill=COLOURS["navy"])
+    tick_f = load_font(FONT_SANS_B, 16)
+    lines = wrap_text(canvas, TICKER, tick_f, TEXT_W - 24)
     ty = y + (band_h - len(lines) * 20) // 2
-    for ln in lines:
-        d.text((MARGIN + 12, ty), ln, font=tf, fill=(255, 255, 255))
+    for line in lines:
+        canvas.text((EDGE + 12, ty), line, font=tick_f,
+                    fill=(255, 255, 255))
         ty += 20
     y += band_h
-    foot = font(SANS, 15)
+    foot = load_font(FONT_SANS, 15)
     note = "THE DAILY GLOBE  •  SATURDAY 21 NOVEMBER 2026  •  FIVE STORIES, ONE DAY"
-    d.text(((W - d.textlength(note, font=foot)) / 2, y + 12), note,
-           font=foot, fill=GREY)
+    canvas.text(((PAGE_W - canvas.textlength(note, font=foot)) / 2, y + 12),
+                note, font=foot, fill=COLOURS["grey"])
     y += 36
-    assert y <= H - 4, f"layout overflow: y={y}"
+    assert y <= PAGE_H - 4, f"layout overflow: y={y}"
     print("layout bottom y =", y)
 
-    img.save("assets/entry.png", format="PNG", optimize=True)
-    print("wrote assets/entry.png", img.size)
+    page.save("assets/entry.png", format="PNG", optimize=True)
+    print("wrote assets/entry.png", page.size)
 
 
 if __name__ == "__main__":
-    main()
+    build()
